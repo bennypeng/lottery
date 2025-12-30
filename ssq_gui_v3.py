@@ -1,8 +1,12 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-双色球推荐工具 - 图形界面版 v2.2.0
+双色球推荐工具 - 图形界面版 v2.3.0
 Python 3.12 兼容 | 支持Windows打包
+
+新增功能：
+1. 开奖倒计时（状态信息上方）
+2. 显示距离下一次开奖的剩余时间
+3. 自动每秒更新
 
 优化：
 1. 删除历史数据统计区域
@@ -37,10 +41,10 @@ class AppConfig:
     RED_BALL_RANGE = (1, 33)
     BLUE_BALL_RANGE = (1, 16)
     TIMEOUT = 30
-    VERSION = "2.2.0"
+    VERSION = "2.3.0"
 
     # UI配置
-    WINDOW_SIZE = "850x580"
+    WINDOW_SIZE = "850x600"
     FONT_FAMILY = "Microsoft YaHei"
     FONT_FAMILY_MONO = "Consolas"
 
@@ -411,6 +415,9 @@ class SSQGUI:
         # 初始化通信队列
         self.message_queue = MessageQueue()
 
+        # 初始化倒计时变量
+        self.countdown_var = tk.StringVar(value="开奖倒计时: 计算中...")
+
         # 绑定安全关闭
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
@@ -418,9 +425,73 @@ class SSQGUI:
         self.setup_ui()
         self.check_cache_status()
 
+        # 启动倒计时更新
+        self.update_countdown()
+
         # 启动消息处理
         self.process_messages()
         logging.info("GUI初始化完成")
+
+    def update_countdown(self):
+        """更新开奖倒计时（每秒）"""
+        try:
+            next_draw = self.get_next_draw_time()
+            now = datetime.now()
+            delta = next_draw - now
+
+            if delta.total_seconds() > 0:
+                days = delta.days
+                hours, remainder = divmod(delta.seconds, 3600)
+                minutes, seconds = divmod(remainder, 60)
+
+                if days > 0:
+                    self.countdown_var.set(
+                        f"开奖倒计时: {days}天 {hours}小时 {minutes}分")
+                elif hours > 0:
+                    self.countdown_var.set(
+                        f"开奖倒计时: {hours}小时 {minutes}分 {seconds}秒")
+                else:
+                    self.countdown_var.set(f"开奖倒计时: {minutes}分 {seconds}秒")
+            else:
+                self.countdown_var.set("开奖倒计时: 正在开奖中...")
+
+        except Exception as e:
+            self.countdown_var.set("开奖倒计时: 计算失败")
+
+        # 每秒更新一次
+        self.root.after(1000, self.update_countdown)
+
+    def get_next_draw_time(self):
+        """计算下一次开奖时间（周二、四、日 21:15）"""
+        now = datetime.now()
+        # 周二(1), 周四(3), 周日(6) - Python的weekday(): 周一=0, 周日=6
+        draw_weekdays = [1, 3, 6]
+
+        # 今天的开奖时间
+        today_draw = datetime(now.year, now.month, now.day, 21, 15, 0)
+
+        # 如果今天是开奖日且已过开奖时间，则从明天开始找
+        if now.weekday() in draw_weekdays and now > today_draw:
+            start_date = now + timedelta(days=1)
+        else:
+            start_date = now
+
+        # 查找下一个开奖日
+        for i in range(7):
+            check_date = start_date + timedelta(days=i)
+            if check_date.weekday() in draw_weekdays:
+                next_draw = datetime(
+                    check_date.year,
+                    check_date.month,
+                    check_date.day,
+                    21,
+                    15,
+                    0)
+                if next_draw > now:
+                    return next_draw
+
+        # 理论上不会到这里
+        return now + timedelta(days=1)
 
     def setup_ui(self):
         """构建UI布局"""
@@ -441,6 +512,17 @@ class SSQGUI:
         main_container.columnconfigure(1, weight=2)
 
         # ========== 左侧面板 ==========
+        # 新增：开奖倒计时（在状态信息上方）
+        countdown_frame = ttk.LabelFrame(left_panel, text="开奖倒计时", padding="5")
+        countdown_frame.pack(fill=tk.X, pady=5)
+
+        ttk.Label(
+            countdown_frame,
+            textvariable=self.countdown_var,
+            font=(AppConfig.FONT_FAMILY, 10, "bold"),
+            foreground="red"
+        ).pack(anchor=tk.W)
+
         # 状态信息
         status_frame = ttk.LabelFrame(left_panel, text="状态信息", padding="5")
         status_frame.pack(fill=tk.X, pady=5)
@@ -488,18 +570,16 @@ class SSQGUI:
         btn_container = ttk.Frame(button_frame)
         btn_container.pack(anchor=tk.W)
 
-        self.btn_fetch = ttk.Button(btn_container, text="🔄获取数据",
-                                    command=self.start_fetch_data, width=12)
-        self.btn_fetch.pack(side=tk.LEFT, padx=2, pady=2)
-
-        self.btn_clear = ttk.Button(btn_container, text="🗑清除缓存",
-                                    command=self.clear_cache, width=12)
-        self.btn_clear.pack(side=tk.LEFT, padx=2, pady=2)
-
         # 进度条
         self.progress = ttk.Progressbar(
             left_panel, mode='indeterminate', length=200)
         self.progress.pack(fill=tk.X, pady=5)
+
+        self.btn_fetch = ttk.Button(btn_container, text="🔄获取数据", command=self.start_fetch_data, width=12)
+        self.btn_fetch.pack(side=tk.LEFT, padx=2, pady=2)
+
+        self.btn_clear = ttk.Button(btn_container, text="🗑清除缓存", command=self.clear_cache, width=12)
+        self.btn_clear.pack(side=tk.LEFT, padx=2, pady=2)
 
         # ========== 右侧面板（推荐区域）==========
         recommend_frame = ttk.LabelFrame(right_panel, text="推荐号码", padding="5")
@@ -546,7 +626,7 @@ class SSQGUI:
 
         # 推荐按钮（移到这里）
         btn_recommend_frame = ttk.Frame(recommend_frame)
-        btn_recommend_frame.pack(fill=tk.X, pady=5)
+        btn_recommend_frame.pack(fill=tk.X, pady=3)
 
         self.btn_recommend = ttk.Button(
             btn_recommend_frame,
