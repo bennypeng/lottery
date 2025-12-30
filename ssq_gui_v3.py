@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-双色球推荐工具 - 图形界面版 v2.0.0
+双色球推荐工具 - 图形界面版 v2.2.0
 Python 3.12 兼容 | 支持Windows打包
 
-新增功能：
-1. 多模型推荐系统（8种算法）
-2. 算法选择下拉菜单
-3. 算法说明和参数配置
+优化：
+1. 删除历史数据统计区域
+2. 将生成推荐按钮移到推荐区域
+3. 界面更简洁
 """
 
 import os
@@ -37,10 +37,10 @@ class AppConfig:
     RED_BALL_RANGE = (1, 33)
     BLUE_BALL_RANGE = (1, 16)
     TIMEOUT = 30
-    VERSION = "2.0.0"
+    VERSION = "2.2.0"
 
     # UI配置
-    WINDOW_SIZE = "980x720"  # 增加高度
+    WINDOW_SIZE = "850x580"
     FONT_FAMILY = "Microsoft YaHei"
     FONT_FAMILY_MONO = "Consolas"
 
@@ -49,7 +49,7 @@ class AppConfig:
 
 class RecommendAlgorithm(Enum):
     """推荐算法枚举"""
-    FREQUENCY_WEIGHTED = ("frequency_weighted", "频率加权+随机（当前）")
+    FREQUENCY_WEIGHTED = ("frequency_weighted", "频率加权+随机")
     PURE_RANDOM = ("pure_random", "纯随机")
     PURE_FREQUENCY = ("pure_frequency", "纯频率")
     HOT_COLD_BALANCE = ("hot_cold_balance", "冷热平衡")
@@ -192,7 +192,7 @@ class SSQCore:
 
 
 class RecommendEngine:
-    """推荐算法引擎 - 支持多种算法"""
+    """推荐算法引擎"""
 
     @staticmethod
     def generate(algorithm, red_freq, blue_freq, count=5):
@@ -223,19 +223,20 @@ class RecommendEngine:
 
     @staticmethod
     def _frequency_weighted(red_freq, blue_freq, count):
-        """算法1：频率加权+随机（当前算法）"""
         recommendations = []
         all_reds = list(range(1, 34))
         all_blues = list(range(1, 17))
 
         for _ in range(count):
             red_weights = [
-                red_freq.get(num, 1) + random.uniform(0.1, 1.0)
-                for num in all_reds
-            ]
+                red_freq.get(
+                    num,
+                    1) +
+                random.uniform(
+                    0.1,
+                    1.0) for num in all_reds]
             selected_reds = sorted(
-                list(set(random.choices(all_reds, weights=red_weights, k=6)))[:6]
-            )
+                list(set(random.choices(all_reds, weights=red_weights, k=6)))[:6])
             while len(selected_reds) < 6:
                 candidate = random.randint(1, 33)
                 if candidate not in selected_reds:
@@ -252,7 +253,6 @@ class RecommendEngine:
 
     @staticmethod
     def _pure_random(count):
-        """算法2：纯随机"""
         recommendations = []
         for _ in range(count):
             reds = sorted(random.sample(range(1, 34), 6))
@@ -262,9 +262,7 @@ class RecommendEngine:
 
     @staticmethod
     def _pure_frequency(red_freq, blue_freq, count):
-        """算法3：纯频率（无随机）"""
         recommendations = []
-        # 取最热门的6个红球
         top_reds = [
             num for num,
             _ in sorted(
@@ -273,8 +271,6 @@ class RecommendEngine:
                 reverse=True)[
                 :6]]
         top_reds = sorted(top_reds)
-
-        # 取最热门的1个蓝球
         top_blue = sorted(
             blue_freq.items(),
             key=lambda x: x[1],
@@ -286,13 +282,8 @@ class RecommendEngine:
 
     @staticmethod
     def _hot_cold_balance(red_freq, blue_freq, count):
-        """算法4：冷热平衡（3热3冷）"""
         recommendations = []
-        all_reds = list(range(1, 34))
-        all_blues = list(range(1, 17))
-
         for _ in range(count):
-            # 红球：前10热门 + 后10冷门
             hot = sorted(
                 red_freq.items(),
                 key=lambda x: x[1],
@@ -300,12 +291,10 @@ class RecommendEngine:
                 :10]
             cold = sorted(red_freq.items(), key=lambda x: x[1])[:10]
 
-            # 随机选3个热门 + 3个冷门
             hot_selected = random.sample([x[0] for x in hot], 3)
             cold_selected = random.sample([x[0] for x in cold], 3)
             selected_reds = sorted(hot_selected + cold_selected)
 
-            # 蓝球：冷热各1个
             hot_blue = sorted(
                 blue_freq.items(),
                 key=lambda x: x[1],
@@ -319,53 +308,39 @@ class RecommendEngine:
 
     @staticmethod
     def _interval_distribution(red_freq, blue_freq, count):
-        """算法5：区间分布（确保覆盖不同区间）"""
         recommendations = []
-
         for _ in range(count):
-            # 红球区间：1-11, 12-22, 23-33
             interval1 = random.sample(range(1, 12), 2)
             interval2 = random.sample(range(12, 23), 2)
             interval3 = random.sample(range(23, 34), 2)
             selected_reds = sorted(interval1 + interval2 + interval3)
-
-            # 蓝球区间：1-8, 9-16
             selected_blue = random.choice(
                 [random.randint(1, 8), random.randint(9, 16)])
-
             recommendations.append(
                 {'red': selected_reds, 'blue': selected_blue})
         return recommendations
 
     @staticmethod
     def _odd_even_balance(red_freq, blue_freq, count):
-        """算法6：奇偶平衡（3奇3偶）"""
         recommendations = []
-
         for _ in range(count):
-            # 红球：3奇数 + 3偶数
             odds = random.sample([x for x in range(1, 34) if x % 2 == 1], 3)
             evens = random.sample([x for x in range(1, 34) if x % 2 == 0], 3)
             selected_reds = sorted(odds + evens)
-
-            # 蓝球：奇偶随机
-            selected_blue = random.choice([random.randint(1, 16)])
+            selected_blue = random.randint(1, 16)
             recommendations.append(
                 {'red': selected_reds, 'blue': selected_blue})
         return recommendations
 
     @staticmethod
     def _sum_optimized(red_freq, blue_freq, count):
-        """算法7：和值优化（红球和值在80-140之间）"""
         recommendations = []
-
         for _ in range(count):
             while True:
                 selected_reds = sorted(random.sample(range(1, 34), 6))
                 sum_value = sum(selected_reds)
-                if 80 <= sum_value <= 140:  # 常见和值范围
+                if 80 <= sum_value <= 140:
                     break
-
             selected_blue = random.randint(1, 16)
             recommendations.append(
                 {'red': selected_reds, 'blue': selected_blue})
@@ -373,13 +348,10 @@ class RecommendEngine:
 
     @staticmethod
     def _no_consecutive(red_freq, blue_freq, count):
-        """算法8：避免连号（任意两个号码不相邻）"""
         recommendations = []
-
         for _ in range(count):
             while True:
                 selected_reds = sorted(random.sample(range(1, 34), 6))
-                # 检查是否有连号
                 has_consecutive = False
                 for i in range(len(selected_reds) - 1):
                     if selected_reds[i + 1] - selected_reds[i] == 1:
@@ -387,7 +359,6 @@ class RecommendEngine:
                         break
                 if not has_consecutive:
                     break
-
             selected_blue = random.randint(1, 16)
             recommendations.append(
                 {'red': selected_reds, 'blue': selected_blue})
@@ -457,11 +428,11 @@ class SSQGUI:
         main_container = ttk.Frame(self.root)
         main_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        # 左侧面板（操作 + 统计）
+        # 左侧面板
         left_panel = ttk.Frame(main_container)
         left_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
 
-        # 右侧面板（推荐结果）
+        # 右侧面板
         right_panel = ttk.Frame(main_container)
         right_panel.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
 
@@ -491,11 +462,10 @@ class SSQGUI:
                 2,
                 0))
 
-        # ========== 最新一期开奖结果（球形可视化）==========
+        # 最新一期
         latest_frame = ttk.LabelFrame(left_panel, text="最新一期开奖结果", padding="5")
         latest_frame.pack(fill=tk.X, pady=5)
 
-        # 文本展示（期号和日期）- 左对齐
         self.latest_result_text = tk.Text(latest_frame, height=2,
                                           font=(AppConfig.FONT_FAMILY, 10),
                                           wrap=tk.WORD,
@@ -506,7 +476,6 @@ class SSQGUI:
         self.latest_result_text.insert(tk.END, "请先获取数据...")
         self.latest_result_text.config(state=tk.DISABLED)
 
-        # 球形展示容器 - 左对齐
         ball_container = ttk.Frame(latest_frame)
         ball_container.pack(fill=tk.X, pady=3, anchor=tk.W)
         self.ball_frame = ttk.Frame(ball_container)
@@ -523,13 +492,6 @@ class SSQGUI:
                                     command=self.start_fetch_data, width=12)
         self.btn_fetch.pack(side=tk.LEFT, padx=2, pady=2)
 
-        self.btn_recommend = ttk.Button(
-            btn_container,
-            text="🎯生成推荐",
-            command=self.start_generate_recommend,
-            width=12)
-        self.btn_recommend.pack(side=tk.LEFT, padx=2, pady=2)
-
         self.btn_clear = ttk.Button(btn_container, text="🗑清除缓存",
                                     command=self.clear_cache, width=12)
         self.btn_clear.pack(side=tk.LEFT, padx=2, pady=2)
@@ -539,82 +501,11 @@ class SSQGUI:
             left_panel, mode='indeterminate', length=200)
         self.progress.pack(fill=tk.X, pady=5)
 
-        # ========== 历史统计区域（4个，2x2布局）==========
-        stats_frame = ttk.LabelFrame(left_panel, text="历史数据统计", padding="5")
-        stats_frame.pack(fill=tk.BOTH, expand=True, pady=5)
-
-        stats_container = ttk.Frame(stats_frame)
-        stats_container.pack(fill=tk.BOTH, expand=True)
-
-        # 创建四个统计区域（2x2网格）
-        # 1. 热门红球
-        hot_red_frame = ttk.LabelFrame(
-            stats_container, text="● 热门红球", padding="3")
-        hot_red_frame.grid(
-            row=0, column=0, sticky="nsew", padx=(
-                0, 2), pady=(
-                0, 2))
-        self.hot_red_text = tk.Text(
-            hot_red_frame, height=7, width=25, font=(
-                AppConfig.FONT_FAMILY_MONO, 9), wrap=tk.WORD)
-        self.hot_red_text.pack(fill=tk.BOTH, expand=True)
-        self.hot_red_text.insert(tk.END, "请先获取数据...")
-        self.hot_red_text.config(state=tk.DISABLED)
-
-        # 2. 冷门红球
-        cold_red_frame = ttk.LabelFrame(
-            stats_container, text="○ 冷门红球", padding="3")
-        cold_red_frame.grid(
-            row=0, column=1, sticky="nsew", padx=(
-                2, 0), pady=(
-                0, 2))
-        self.cold_red_text = tk.Text(
-            cold_red_frame, height=7, width=25, font=(
-                AppConfig.FONT_FAMILY_MONO, 9), wrap=tk.WORD)
-        self.cold_red_text.pack(fill=tk.BOTH, expand=True)
-        self.cold_red_text.insert(tk.END, "请先获取数据...")
-        self.cold_red_text.config(state=tk.DISABLED)
-
-        # 3. 热门蓝球
-        hot_blue_frame = ttk.LabelFrame(
-            stats_container, text="● 热门蓝球", padding="3")
-        hot_blue_frame.grid(
-            row=1, column=0, sticky="nsew", padx=(
-                0, 2), pady=(
-                2, 0))
-        self.hot_blue_text = tk.Text(
-            hot_blue_frame, height=7, width=25, font=(
-                AppConfig.FONT_FAMILY_MONO, 9), wrap=tk.WORD)
-        self.hot_blue_text.pack(fill=tk.BOTH, expand=True)
-        self.hot_blue_text.insert(tk.END, "请先获取数据...")
-        self.hot_blue_text.config(state=tk.DISABLED)
-
-        # 4. 冷门蓝球
-        cold_blue_frame = ttk.LabelFrame(
-            stats_container, text="○ 冷门蓝球", padding="3")
-        cold_blue_frame.grid(
-            row=1, column=1, sticky="nsew", padx=(
-                2, 0), pady=(
-                2, 0))
-        self.cold_blue_text = tk.Text(
-            cold_blue_frame, height=7, width=25, font=(
-                AppConfig.FONT_FAMILY_MONO, 9), wrap=tk.WORD)
-        self.cold_blue_text.pack(fill=tk.BOTH, expand=True)
-        self.cold_blue_text.insert(tk.END, "请先获取数据...")
-        self.cold_blue_text.config(state=tk.DISABLED)
-
-        # 配置网格权重
-        stats_container.columnconfigure(0, weight=1)
-        stats_container.columnconfigure(1, weight=1)
-        stats_container.rowconfigure(0, weight=1)
-        stats_container.rowconfigure(1, weight=1)
-
-        # ========== 右侧面板 ==========
-        # 推荐算法选择区域
+        # ========== 右侧面板（推荐区域）==========
         recommend_frame = ttk.LabelFrame(right_panel, text="推荐号码", padding="5")
         recommend_frame.pack(fill=tk.BOTH, expand=True, pady=5)
 
-        # 算法选择行
+        # 算法选择
         algo_frame = ttk.Frame(recommend_frame)
         algo_frame.pack(fill=tk.X, pady=(0, 5))
 
@@ -625,8 +516,6 @@ class SSQGUI:
                 AppConfig.FONT_FAMILY,
                 9)).pack(
             side=tk.LEFT)
-
-        # 算法下拉菜单
         self.algorithm_var = tk.StringVar(
             value=RecommendAlgorithm.FREQUENCY_WEIGHTED.description)
         algo_options = [algo.description for algo in RecommendAlgorithm]
@@ -655,6 +544,17 @@ class SSQGUI:
                 RecommendAlgorithm.FREQUENCY_WEIGHTED))
         self.algo_desc_text.config(state=tk.DISABLED)
 
+        # 推荐按钮（移到这里）
+        btn_recommend_frame = ttk.Frame(recommend_frame)
+        btn_recommend_frame.pack(fill=tk.X, pady=5)
+
+        self.btn_recommend = ttk.Button(
+            btn_recommend_frame,
+            text="🎯 生成推荐",
+            command=self.start_generate_recommend,
+            width=15)
+        self.btn_recommend.pack(side=tk.LEFT, padx=2, pady=2)
+
         # 推荐结果展示
         self.result_text = scrolledtext.ScrolledText(
             recommend_frame, height=10, font=(
@@ -673,29 +573,20 @@ class SSQGUI:
     def get_algorithm_description(self, algorithm):
         """获取算法说明"""
         descriptions = {
-            RecommendAlgorithm.FREQUENCY_WEIGHTED:
-                "频率加权+随机：基于历史频率，加入随机扰动，平衡热门和随机性",
-            RecommendAlgorithm.PURE_RANDOM:
-                "纯随机：完全随机生成，无任何历史数据依赖",
-            RecommendAlgorithm.PURE_FREQUENCY:
-                "纯频率：只选择历史最热门的号码，无随机性",
-            RecommendAlgorithm.HOT_COLD_BALANCE:
-                "冷热平衡：3个热门号码 + 3个冷门号码，平衡趋势",
-            RecommendAlgorithm.INTERVAL_DISTRIBUTION:
-                "区间分布：确保号码分布在1-11, 12-22, 23-33三个区间",
-            RecommendAlgorithm.ODD_EVEN_BALANCE:
-                "奇偶平衡：3个奇数 + 3个偶数，保持奇偶比例",
-            RecommendAlgorithm.SUM_OPTIMIZED:
-                "和值优化：红球和值控制在80-140之间（常见范围）",
-            RecommendAlgorithm.NO_CONSECUTIVE:
-                "避免连号：任意两个号码不相邻，减少连号概率"
+            RecommendAlgorithm.FREQUENCY_WEIGHTED: "频率加权+随机：基于历史频率，加入随机扰动",
+            RecommendAlgorithm.PURE_RANDOM: "纯随机：完全随机生成",
+            RecommendAlgorithm.PURE_FREQUENCY: "纯频率：只选最热门号码",
+            RecommendAlgorithm.HOT_COLD_BALANCE: "冷热平衡：3热+3冷",
+            RecommendAlgorithm.INTERVAL_DISTRIBUTION: "区间分布：确保覆盖不同区间",
+            RecommendAlgorithm.ODD_EVEN_BALANCE: "奇偶平衡：3奇+3偶",
+            RecommendAlgorithm.SUM_OPTIMIZED: "和值优化：控制和值在80-140",
+            RecommendAlgorithm.NO_CONSECUTIVE: "避免连号：无相邻号码"
         }
         return descriptions.get(algorithm, "")
 
     def on_algorithm_change(self, event):
-        """算法选择变化时更新说明"""
+        """算法选择变化"""
         selected_desc = self.algorithm_var.get()
-        # 找到对应的算法枚举
         for algo in RecommendAlgorithm:
             if algo.description == selected_desc:
                 description = self.get_algorithm_description(algo)
@@ -726,32 +617,19 @@ class SSQGUI:
 
         try:
             os.remove(AppConfig.CACHE_FILE)
-
-            # 更新状态显示
             self.cache_var.set("缓存: 无/过期")
             self.status_var.set("缓存已清除，请重新获取")
 
-            # 清空所有统计文本框
-            for text_widget in [self.hot_red_text, self.cold_red_text,
-                                self.hot_blue_text, self.cold_blue_text]:
-                text_widget.config(state=tk.NORMAL)
-                text_widget.delete(1.0, tk.END)
-                text_widget.insert(tk.END, "请先获取数据...")
-                text_widget.config(state=tk.DISABLED)
-
-            # 清空推荐结果
             self.result_text.config(state=tk.NORMAL)
             self.result_text.delete(1.0, tk.END)
             self.result_text.insert(tk.END, "点击【生成推荐】获取号码...")
             self.result_text.config(state=tk.DISABLED)
 
-            # 清空最新一期展示
             self.latest_result_text.config(state=tk.NORMAL)
             self.latest_result_text.delete(1.0, tk.END)
             self.latest_result_text.insert(tk.END, "请先获取数据...")
             self.latest_result_text.config(state=tk.DISABLED)
 
-            # 清空球形展示
             for widget in self.ball_frame.winfo_children():
                 widget.destroy()
 
@@ -797,7 +675,6 @@ class SSQGUI:
             messagebox.showwarning("警告", "没有有效的缓存数据！")
             return
 
-        # 获取选中的算法
         selected_desc = self.algorithm_var.get()
         selected_algorithm = None
         for algo in RecommendAlgorithm:
@@ -812,7 +689,6 @@ class SSQGUI:
         self._set_ui_busy(True)
         self.message_queue.send(MessageType.PROGRESS_START)
 
-        # 传递算法参数
         thread = threading.Thread(
             target=self._generate_recommend_worker,
             args=(selected_algorithm,),
@@ -828,11 +704,9 @@ class SSQGUI:
             red_freq, blue_freq = SSQCore.analyze_frequency(
                 red_balls, blue_balls)
 
-            # 使用算法引擎生成推荐
             recommendations = RecommendEngine.generate(
                 algorithm, red_freq, blue_freq)
 
-            # 准备推荐结果
             result_lines = [
                 f"📊 算法: {algorithm.description}",
                 f"📊 分析基数: {len(red_balls)}个红球, {len(blue_balls)}个蓝球",
@@ -863,7 +737,6 @@ class SSQGUI:
 
             try:
                 if msg_type == MessageType.FETCH_SUCCESS:
-                    # 解析消息内容
                     lines = content.split('\n')
                     status_msg = lines[0]
                     cache_msg = lines[1] if len(lines) > 1 else ""
@@ -896,89 +769,6 @@ class SSQGUI:
                         data = SSQCore.load_cached_data()
                         if data:
                             self.show_latest_result(data)
-
-                    # 展示历史统计（4个区域，每区域14个球，7行）
-                    try:
-                        data = SSQCore.load_cached_data()
-                        if data:
-                            red_balls, blue_balls = SSQCore.parse_numbers(data)
-                            red_freq, blue_freq = SSQCore.analyze_frequency(
-                                red_balls, blue_balls)
-
-                            # 1. 热门红球（前14个，配对成7行）
-                            top_reds = sorted(
-                                red_freq.items(),
-                                key=lambda x: x[1],
-                                reverse=True)[
-                                :14]
-                            hot_red_lines = []
-                            for i in range(0, 14, 2):
-                                num1, freq1 = top_reds[i]
-                                num2, freq2 = top_reds[i + 1]
-                                hot_red_lines.append(
-                                    f"{num1:02d}:{freq1:3d}次      {num2:02d}:{freq2:3d}次")
-
-                            # 2. 冷门红球（后14个，配对成7行）
-                            bottom_reds = sorted(
-                                red_freq.items(), key=lambda x: x[1])[:14]
-                            cold_red_lines = []
-                            for i in range(0, 14, 2):
-                                num1, freq1 = bottom_reds[i]
-                                num2, freq2 = bottom_reds[i + 1]
-                                cold_red_lines.append(
-                                    f"{num1:02d}:{freq1:3d}次      {num2:02d}:{freq2:3d}次")
-
-                            # 3. 热门蓝球（前14个，配对成7行）
-                            top_blues = sorted(
-                                blue_freq.items(),
-                                key=lambda x: x[1],
-                                reverse=True)[
-                                :14]
-                            hot_blue_lines = []
-                            for i in range(0, 14, 2):
-                                num1, freq1 = top_blues[i]
-                                num2, freq2 = top_blues[i + 1]
-                                hot_blue_lines.append(
-                                    f"{num1:02d}:{freq1:3d}次      {num2:02d}:{freq2:3d}次")
-
-                            # 4. 冷门蓝球（后14个，配对成7行）
-                            bottom_blues = sorted(
-                                blue_freq.items(), key=lambda x: x[1])[:14]
-                            cold_blue_lines = []
-                            for i in range(0, 14, 2):
-                                num1, freq1 = bottom_blues[i]
-                                num2, freq2 = bottom_blues[i + 1]
-                                cold_blue_lines.append(
-                                    f"{num1:02d}:{freq1:3d}次      {num2:02d}:{freq2:3d}次")
-
-                            # 更新四个区域
-                            self.hot_red_text.config(state=tk.NORMAL)
-                            self.hot_red_text.delete(1.0, tk.END)
-                            self.hot_red_text.insert(
-                                tk.END, "\n".join(hot_red_lines))
-                            self.hot_red_text.config(state=tk.DISABLED)
-
-                            self.cold_red_text.config(state=tk.NORMAL)
-                            self.cold_red_text.delete(1.0, tk.END)
-                            self.cold_red_text.insert(
-                                tk.END, "\n".join(cold_red_lines))
-                            self.cold_red_text.config(state=tk.DISABLED)
-
-                            self.hot_blue_text.config(state=tk.NORMAL)
-                            self.hot_blue_text.delete(1.0, tk.END)
-                            self.hot_blue_text.insert(
-                                tk.END, "\n".join(hot_blue_lines))
-                            self.hot_blue_text.config(state=tk.DISABLED)
-
-                            self.cold_blue_text.config(state=tk.NORMAL)
-                            self.cold_blue_text.delete(1.0, tk.END)
-                            self.cold_blue_text.insert(
-                                tk.END, "\n".join(cold_blue_lines))
-                            self.cold_blue_text.config(state=tk.DISABLED)
-
-                            logging.info("历史统计已展示（4个区域，每区域14个球）")
-                    except Exception as e:
-                        logging.error(f"展示历史统计失败: {e}")
 
                     self._set_ui_busy(False)
                     messagebox.showinfo("成功", content)
@@ -1030,7 +820,7 @@ class SSQGUI:
             self.progress.stop()
 
     def show_latest_result(self, data):
-        """展示最新一期开奖结果（文本+球形）"""
+        """展示最新一期开奖结果"""
         if not data or len(data) == 0:
             return
 
@@ -1048,26 +838,21 @@ class SSQGUI:
         reds = latest.get('red', '')
         blues = latest.get('blue', '')
 
-        # 解析号码
         red_list = [int(x) for x in reds.split(',')] if reds else []
         blue_list = [int(blues)] if blues else []
 
-        # 更新文本展示 - 左对齐
         self.latest_result_text.config(state=tk.NORMAL)
         self.latest_result_text.delete(1.0, tk.END)
         self.latest_result_text.insert(tk.END, f"期号: {issue}  日期: {date}")
         self.latest_result_text.config(state=tk.DISABLED)
 
-        # 绘制球形 - 左对齐
         self.draw_balls(red_list, blue_list)
 
     def draw_balls(self, red_list, blue_list):
         """绘制彩色球体"""
-        # 清空旧球体
         for widget in self.ball_frame.winfo_children():
             widget.destroy()
 
-        # 创建红球（红色背景，白色文字，圆形按钮样式）
         for num in red_list:
             ball = tk.Label(
                 self.ball_frame,
@@ -1081,10 +866,8 @@ class SSQGUI:
                 bd=2)
             ball.pack(side=tk.LEFT, padx=2)
 
-        # 分隔符
         ttk.Label(self.ball_frame, text="  |  ").pack(side=tk.LEFT)
 
-        # 创建蓝球（蓝色背景，白色文字，圆形按钮样式）
         for num in blue_list:
             ball = tk.Label(
                 self.ball_frame,
