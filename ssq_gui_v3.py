@@ -10,21 +10,6 @@ Python 3.12 兼容 | 支持Windows打包
 3. 算法说明和参数配置
 """
 
-try:
-    import matplotlib
-    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-    import matplotlib.pyplot as plt
-    import numpy as np
-except ImportError:
-    print("=" * 60)
-    print("错误:缺少必要的可视化库")
-    print("=" * 60)
-    print("请安装matplotlib:")
-    print(" pip install matplotlib")
-    print("=" * 60)
-    exit()
-
-
 import os
 import json
 import random
@@ -255,7 +240,7 @@ class RecommendEngine:
                 candidate = random.randint(1, 33)
                 if candidate not in selected_reds:
                     selected_reds.append(candidate)
-                    selected_reds = sorted(selected_reds[:6])
+            selected_reds = sorted(selected_reds[:6])
 
             blue_weights = [blue_freq.get(num, 1) for num in all_blues]
             selected_blue = random.choices(
@@ -410,6 +395,7 @@ class RecommendEngine:
 
 # ==================== 通信模块 ====================
 
+
 class MessageQueue:
     """线程通信队列管理器"""
 
@@ -442,44 +428,10 @@ class MessageQueue:
 # ==================== GUI界面模块 ====================
 
 
-def get_algorithm_description(algorithm):
-    """获取算法说明"""
-    descriptions = {
-        RecommendAlgorithm.FREQUENCY_WEIGHTED:
-            "频率加权+随机：基于历史频率，加入随机扰动，平衡热门和随机性",
-        RecommendAlgorithm.PURE_RANDOM:
-            "纯随机：完全随机生成，无任何历史数据依赖",
-        RecommendAlgorithm.PURE_FREQUENCY:
-            "纯频率：只选择历史最热门的号码，无随机性",
-        RecommendAlgorithm.HOT_COLD_BALANCE:
-            "冷热平衡：3个热门号码 + 3个冷门号码，平衡趋势",
-        RecommendAlgorithm.INTERVAL_DISTRIBUTION:
-            "区间分布：确保号码分布在1-11, 12-22, 23-33三个区间",
-        RecommendAlgorithm.ODD_EVEN_BALANCE:
-            "奇偶平衡：3个奇数 + 3个偶数，保持奇偶比例",
-        RecommendAlgorithm.SUM_OPTIMIZED:
-            "和值优化：红球和值控制在80-140之间（常见范围）",
-        RecommendAlgorithm.NO_CONSECUTIVE:
-            "避免连号：任意两个号码不相邻，减少连号概率"
-    }
-    return descriptions.get(algorithm, "")
-
-
 class SSQGUI:
     """图形界面类 - 负责UI展示和用户交互"""
 
     def __init__(self, root):
-
-        self.visualizer = None
-        self.result_viz_frame = None
-        self.freq_viz_frame = None
-        self.result_text = None
-        self.algo_desc_text = None
-        self.algo_combo = None
-        self.algorithm_var = None
-        self.status_var = None
-        self.cache_var = None
-
         self.root = root
         self.root.title(f"双色球智能推荐工具 v{AppConfig.VERSION}")
         self.root.geometry(AppConfig.WINDOW_SIZE)
@@ -509,7 +461,7 @@ class SSQGUI:
         left_panel = ttk.Frame(main_container)
         left_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
 
-        # 右侧面板（标签页）
+        # 右侧面板（推荐结果）
         right_panel = ttk.Frame(main_container)
         right_panel.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
 
@@ -518,19 +470,154 @@ class SSQGUI:
         main_container.columnconfigure(1, weight=2)
 
         # ========== 左侧面板 ==========
-        # ...左侧面板代码不变（状态、最新一期、按钮、进度条、统计）...
+        # 状态信息
+        status_frame = ttk.LabelFrame(left_panel, text="状态信息", padding="5")
+        status_frame.pack(fill=tk.X, pady=5)
 
-        # ========== 右侧面板（标签页）==========
-        notebook = ttk.Notebook(right_panel)
-        notebook.pack(fill=tk.BOTH, expand=True, pady=5)
+        self.status_var = tk.StringVar(value="就绪")
+        self.cache_var = tk.StringVar(value="缓存: 未检测")
 
-        # 标签1：推荐号码
-        frame_recommend = ttk.Frame(notebook)
-        notebook.add(frame_recommend, text="推荐号码")
+        ttk.Label(status_frame, textvariable=self.status_var,
+                  font=(AppConfig.FONT_FAMILY, 9)).pack(anchor=tk.W)
+        ttk.Label(
+            status_frame,
+            textvariable=self.cache_var,
+            font=(
+                AppConfig.FONT_FAMILY,
+                9,
+                "bold")).pack(
+            anchor=tk.W,
+            pady=(
+                2,
+                0))
 
-        # 算法选择
-        algo_frame = ttk.Frame(frame_recommend)
+        # ========== 最新一期开奖结果（球形可视化）==========
+        latest_frame = ttk.LabelFrame(left_panel, text="最新一期开奖结果", padding="5")
+        latest_frame.pack(fill=tk.X, pady=5)
+
+        # 文本展示（期号和日期）- 左对齐
+        self.latest_result_text = tk.Text(latest_frame, height=2,
+                                          font=(AppConfig.FONT_FAMILY, 10),
+                                          wrap=tk.WORD,
+                                          relief=tk.FLAT,
+                                          background="#F0F0F0",
+                                          padx=5)
+        self.latest_result_text.pack(fill=tk.X, anchor=tk.W)
+        self.latest_result_text.insert(tk.END, "请先获取数据...")
+        self.latest_result_text.config(state=tk.DISABLED)
+
+        # 球形展示容器 - 左对齐
+        ball_container = ttk.Frame(latest_frame)
+        ball_container.pack(fill=tk.X, pady=3, anchor=tk.W)
+        self.ball_frame = ttk.Frame(ball_container)
+        self.ball_frame.pack(anchor=tk.W)
+
+        # 操作按钮
+        button_frame = ttk.Frame(left_panel)
+        button_frame.pack(fill=tk.X, pady=5)
+
+        btn_container = ttk.Frame(button_frame)
+        btn_container.pack(anchor=tk.W)
+
+        self.btn_fetch = ttk.Button(btn_container, text="🔄获取数据",
+                                    command=self.start_fetch_data, width=12)
+        self.btn_fetch.pack(side=tk.LEFT, padx=2, pady=2)
+
+        self.btn_recommend = ttk.Button(
+            btn_container,
+            text="🎯生成推荐",
+            command=self.start_generate_recommend,
+            width=12)
+        self.btn_recommend.pack(side=tk.LEFT, padx=2, pady=2)
+
+        self.btn_clear = ttk.Button(btn_container, text="🗑清除缓存",
+                                    command=self.clear_cache, width=12)
+        self.btn_clear.pack(side=tk.LEFT, padx=2, pady=2)
+
+        # 进度条
+        self.progress = ttk.Progressbar(
+            left_panel, mode='indeterminate', length=200)
+        self.progress.pack(fill=tk.X, pady=5)
+
+        # ========== 历史统计区域（4个，2x2布局）==========
+        stats_frame = ttk.LabelFrame(left_panel, text="历史数据统计", padding="5")
+        stats_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+
+        stats_container = ttk.Frame(stats_frame)
+        stats_container.pack(fill=tk.BOTH, expand=True)
+
+        # 创建四个统计区域（2x2网格）
+        # 1. 热门红球
+        hot_red_frame = ttk.LabelFrame(
+            stats_container, text="● 热门红球", padding="3")
+        hot_red_frame.grid(
+            row=0, column=0, sticky="nsew", padx=(
+                0, 2), pady=(
+                0, 2))
+        self.hot_red_text = tk.Text(
+            hot_red_frame, height=7, width=25, font=(
+                AppConfig.FONT_FAMILY_MONO, 9), wrap=tk.WORD)
+        self.hot_red_text.pack(fill=tk.BOTH, expand=True)
+        self.hot_red_text.insert(tk.END, "请先获取数据...")
+        self.hot_red_text.config(state=tk.DISABLED)
+
+        # 2. 冷门红球
+        cold_red_frame = ttk.LabelFrame(
+            stats_container, text="○ 冷门红球", padding="3")
+        cold_red_frame.grid(
+            row=0, column=1, sticky="nsew", padx=(
+                2, 0), pady=(
+                0, 2))
+        self.cold_red_text = tk.Text(
+            cold_red_frame, height=7, width=25, font=(
+                AppConfig.FONT_FAMILY_MONO, 9), wrap=tk.WORD)
+        self.cold_red_text.pack(fill=tk.BOTH, expand=True)
+        self.cold_red_text.insert(tk.END, "请先获取数据...")
+        self.cold_red_text.config(state=tk.DISABLED)
+
+        # 3. 热门蓝球
+        hot_blue_frame = ttk.LabelFrame(
+            stats_container, text="● 热门蓝球", padding="3")
+        hot_blue_frame.grid(
+            row=1, column=0, sticky="nsew", padx=(
+                0, 2), pady=(
+                2, 0))
+        self.hot_blue_text = tk.Text(
+            hot_blue_frame, height=7, width=25, font=(
+                AppConfig.FONT_FAMILY_MONO, 9), wrap=tk.WORD)
+        self.hot_blue_text.pack(fill=tk.BOTH, expand=True)
+        self.hot_blue_text.insert(tk.END, "请先获取数据...")
+        self.hot_blue_text.config(state=tk.DISABLED)
+
+        # 4. 冷门蓝球
+        cold_blue_frame = ttk.LabelFrame(
+            stats_container, text="○ 冷门蓝球", padding="3")
+        cold_blue_frame.grid(
+            row=1, column=1, sticky="nsew", padx=(
+                2, 0), pady=(
+                2, 0))
+        self.cold_blue_text = tk.Text(
+            cold_blue_frame, height=7, width=25, font=(
+                AppConfig.FONT_FAMILY_MONO, 9), wrap=tk.WORD)
+        self.cold_blue_text.pack(fill=tk.BOTH, expand=True)
+        self.cold_blue_text.insert(tk.END, "请先获取数据...")
+        self.cold_blue_text.config(state=tk.DISABLED)
+
+        # 配置网格权重
+        stats_container.columnconfigure(0, weight=1)
+        stats_container.columnconfigure(1, weight=1)
+        stats_container.rowconfigure(0, weight=1)
+        stats_container.rowconfigure(1, weight=1)
+
+        # ========== 右侧面板 ==========
+        # 推荐算法选择区域
+        recommend_frame = ttk.LabelFrame(right_panel, text="推荐号码", padding="5")
+        recommend_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+
+        # 算法选择行
+        algo_frame = ttk.Frame(recommend_frame)
         algo_frame.pack(fill=tk.X, pady=(0, 5))
+
         ttk.Label(
             algo_frame,
             text="推荐算法:",
@@ -538,6 +625,8 @@ class SSQGUI:
                 AppConfig.FONT_FAMILY,
                 9)).pack(
             side=tk.LEFT)
+
+        # 算法下拉菜单
         self.algorithm_var = tk.StringVar(
             value=RecommendAlgorithm.FREQUENCY_WEIGHTED.description)
         algo_options = [algo.description for algo in RecommendAlgorithm]
@@ -552,7 +641,7 @@ class SSQGUI:
 
         # 算法说明
         self.algo_desc_text = tk.Text(
-            frame_recommend,
+            recommend_frame,
             height=2,
             font=(
                 AppConfig.FONT_FAMILY,
@@ -562,70 +651,17 @@ class SSQGUI:
             background="#F0F0F0")
         self.algo_desc_text.pack(fill=tk.X, pady=(0, 5))
         self.algo_desc_text.insert(
-            tk.END, get_algorithm_description(
+            tk.END, self.get_algorithm_description(
                 RecommendAlgorithm.FREQUENCY_WEIGHTED))
         self.algo_desc_text.config(state=tk.DISABLED)
 
-        # 推荐结果
+        # 推荐结果展示
         self.result_text = scrolledtext.ScrolledText(
-            frame_recommend, height=8, font=(
+            recommend_frame, height=10, font=(
                 AppConfig.FONT_FAMILY_MONO, 12), wrap=tk.WORD)
         self.result_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         self.result_text.insert(tk.END, "点击【生成推荐】获取号码...")
         self.result_text.config(state=tk.DISABLED)
-
-        # 标签2：频率可视化
-        frame_freq_viz = ttk.Frame(notebook)
-        notebook.add(frame_freq_viz, text="频率图表")
-
-        self.freq_viz_frame = ttk.Frame(frame_freq_viz)
-        self.freq_viz_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-
-        freq_btn_frame = ttk.Frame(frame_freq_viz)
-        freq_btn_frame.pack(fill=tk.X, pady=5)
-        ttk.Button(
-            freq_btn_frame,
-            text="📊 频率分布",
-            command=self.show_frequency_chart).pack(
-            side=tk.LEFT,
-            padx=5)
-        ttk.Button(
-            freq_btn_frame,
-            text="🥧 热门占比",
-            command=self.show_pie_chart).pack(
-            side=tk.LEFT,
-            padx=5)
-        ttk.Button(
-            freq_btn_frame,
-            text="🗑 清除",
-            command=self.clear_viz).pack(
-            side=tk.LEFT,
-            padx=5)
-
-        # 标签3：推荐结果可视化
-        frame_result_viz = ttk.Frame(notebook)
-        notebook.add(frame_result_viz, text="推荐图表")
-
-        self.result_viz_frame = ttk.Frame(frame_result_viz)
-        self.result_viz_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-
-        result_btn_frame = ttk.Frame(frame_result_viz)
-        result_btn_frame.pack(fill=tk.X, pady=5)
-        ttk.Button(
-            result_btn_frame,
-            text="📍 推荐分布",
-            command=self.show_recommendation_chart).pack(
-            side=tk.LEFT,
-            padx=5)
-        ttk.Button(
-            result_btn_frame,
-            text="🗑 清除",
-            command=self.clear_viz).pack(
-            side=tk.LEFT,
-            padx=5)
-
-        # 初始化可视化器
-        self.visualizer = DataVisualizer(self.root)
 
         # ========== 底部声明 ==========
         footer = ttk.Label(main_container,
@@ -634,74 +670,27 @@ class SSQGUI:
                            foreground="gray")
         footer.grid(row=1, column=0, columnspan=2, pady=(5, 0))
 
-    # 添加可视化方法
-    def show_frequency_chart(self):
-        """显示频率分布图"""
-        data = SSQCore.load_cached_data()
-        if not data:
-            messagebox.showwarning("警告", "没有缓存数据！")
-            return
-
-        try:
-            red_balls, blue_balls = SSQCore.parse_numbers(data)
-            red_freq, blue_freq = SSQCore.analyze_frequency(
-                red_balls, blue_balls)
-            self.visualizer.create_frequency_chart(
-                red_freq, blue_freq, self.freq_viz_frame)
-            logging.info("显示频率分布图")
-        except Exception as e:
-            messagebox.showerror("错误", f"图表生成失败: {e}")
-
-    def show_pie_chart(self):
-        """显示饼图"""
-        data = SSQCore.load_cached_data()
-        if not data:
-            messagebox.showwarning("警告", "没有缓存数据！")
-            return
-
-        try:
-            red_balls, blue_balls = SSQCore.parse_numbers(data)
-            red_freq, blue_freq = SSQCore.analyze_frequency(
-                red_balls, blue_balls)
-            self.visualizer.create_pie_chart(
-                red_freq, blue_freq, self.freq_viz_frame)
-            logging.info("显示饼图")
-        except Exception as e:
-            messagebox.showerror("错误", f"图表生成失败: {e}")
-
-    def show_recommendation_chart(self):
-        """显示推荐结果分布图"""
-        result = self.result_text.get(1.0, tk.END).strip()
-        if "第1组" not in result:
-            messagebox.showwarning("警告", "请先生成推荐！")
-            return
-
-        try:
-            recommendations = []
-            lines = result.split('\n')
-            for line in lines:
-                if "第" in line and "组:" in line:
-                    parts = line.split('[')
-                    if len(parts) >= 3:
-                        red_str = parts[1].replace(']', '').strip()
-                        blue_str = parts[2].replace(']', '').strip()
-                        reds = [int(x) for x in red_str.split()]
-                        blue = int(blue_str)
-                        recommendations.append({'red': reds, 'blue': blue})
-
-            if recommendations:
-                self.visualizer.create_recommendation_chart(
-                    recommendations, self.result_viz_frame)
-                logging.info("显示推荐分布图")
-            else:
-                messagebox.showerror("错误", "无法解析推荐结果")
-        except Exception as e:
-            messagebox.showerror("错误", f"图表生成失败: {e}")
-
-    def clear_viz(self):
-        """清除图表"""
-        self.visualizer.clear()
-        logging.info("清除图表")
+    def get_algorithm_description(self, algorithm):
+        """获取算法说明"""
+        descriptions = {
+            RecommendAlgorithm.FREQUENCY_WEIGHTED:
+                "频率加权+随机：基于历史频率，加入随机扰动，平衡热门和随机性",
+            RecommendAlgorithm.PURE_RANDOM:
+                "纯随机：完全随机生成，无任何历史数据依赖",
+            RecommendAlgorithm.PURE_FREQUENCY:
+                "纯频率：只选择历史最热门的号码，无随机性",
+            RecommendAlgorithm.HOT_COLD_BALANCE:
+                "冷热平衡：3个热门号码 + 3个冷门号码，平衡趋势",
+            RecommendAlgorithm.INTERVAL_DISTRIBUTION:
+                "区间分布：确保号码分布在1-11, 12-22, 23-33三个区间",
+            RecommendAlgorithm.ODD_EVEN_BALANCE:
+                "奇偶平衡：3个奇数 + 3个偶数，保持奇偶比例",
+            RecommendAlgorithm.SUM_OPTIMIZED:
+                "和值优化：红球和值控制在80-140之间（常见范围）",
+            RecommendAlgorithm.NO_CONSECUTIVE:
+                "避免连号：任意两个号码不相邻，减少连号概率"
+        }
+        return descriptions.get(algorithm, "")
 
     def on_algorithm_change(self, event):
         """算法选择变化时更新说明"""
@@ -709,7 +698,7 @@ class SSQGUI:
         # 找到对应的算法枚举
         for algo in RecommendAlgorithm:
             if algo.description == selected_desc:
-                description = get_algorithm_description(algo)
+                description = self.get_algorithm_description(algo)
                 self.algo_desc_text.config(state=tk.NORMAL)
                 self.algo_desc_text.delete(1.0, tk.END)
                 self.algo_desc_text.insert(tk.END, description)
@@ -1122,170 +1111,6 @@ class SSQGUI:
         self.root.destroy()
 
 # ==================== 程序入口 ====================
-
-
-class DataVisualizer:
-    """数据可视化器"""
-
-    def __init__(self, parent):
-        self.parent = parent
-        self.figure = None
-        self.canvas = None
-
-    def create_frequency_chart(self, red_freq, blue_freq, parent_frame, red_nums=None):
-        """创建频率分布图"""
-        # 清除旧图表
-        for widget in parent_frame.winfo_children():
-            widget.destroy()
-
-        # 创建图形
-        self.figure, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
-        self.figure.tight_layout(pad=3.0)
-
-        # 红球频率图        red_nums = list(range(1, 34))
-        red_counts = [red_freq.get(num, 0) for num in red_nums]
-        ax1.bar(red_nums, red_counts, color='red', alpha=0.7)
-        ax1.set_title('红球频率分布', fontproperties="Microsoft YaHei", fontsize=12)
-        ax1.set_xlabel('号码', fontproperties="Microsoft YaHei")
-        ax1.set_ylabel('出现次数', fontproperties="Microsoft YaHei")
-        ax1.set_xticks(range(1, 34, 3))
-
-        # 蓝球频率图
-        blue_nums = list(range(1, 17))
-        blue_counts = [blue_freq.get(num, 0) for num in blue_nums]
-        ax2.bar(blue_nums, blue_counts, color='blue', alpha=0.7)
-        ax2.set_title('蓝球频率分布', fontproperties="Microsoft YaHei", fontsize=12)
-        ax2.set_xlabel('号码', fontproperties="Microsoft YaHei")
-        ax2.set_ylabel('出现次数', fontproperties="Microsoft YaHei")
-        ax2.set_xticks(range(1, 17, 2))
-
-        # 嵌入到Tkinter
-        self.canvas = FigureCanvasTkAgg(self.figure, master=parent_frame)
-        self.canvas.draw()
-        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-
-    def create_recommendation_chart(self, recommendations, parent_frame):
-        """创建推荐结果可视化"""
-        # 清除旧图表
-        for widget in parent_frame.winfo_children():
-            widget.destroy()
-
-        # 创建图形
-        self.figure, ax = plt.subplots(figsize=(10, 5))
-        self.figure.tight_layout(pad=2.0)
-
-        # 准备数据
-        group_labels = []
-        red_positions = []
-        blue_positions = []
-
-        for i, rec in enumerate(recommendations, 1):
-            group_labels.append(f"第{i}组")
-            for red in rec['red']:
-                red_positions.append((i, red))
-            blue_positions.append((i, rec['blue']))
-
-        # 绘制红球
-        if red_positions:
-            groups, reds = zip(*red_positions)
-            ax.scatter(
-                groups,
-                reds,
-                color='red',
-                s=100,
-                alpha=0.6,
-                label='红球',
-                marker='o')
-
-        # 绘制蓝球
-        if blue_positions:
-            groups, blues = zip(*blue_positions)
-            ax.scatter(
-                groups,
-                blues,
-                color='blue',
-                s=150,
-                alpha=0.8,
-                label='蓝球',
-                marker='s')
-
-        # 设置标签
-        ax.set_title('推荐号码分布图', fontproperties="Microsoft YaHei", fontsize=14)
-        ax.set_xlabel('推荐组别', fontproperties="Microsoft YaHei")
-        ax.set_ylabel('号码', fontproperties="Microsoft YaHei")
-        ax.set_xticks(range(1, len(recommendations) + 1))
-        ax.set_yticks(range(1, 34, 2))
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-
-        # 嵌入到Tkinter
-        self.canvas = FigureCanvasTkAgg(self.figure, master=parent_frame)
-        self.canvas.draw()
-        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-
-    def create_pie_chart(self, red_freq, blue_freq, parent_frame):
-        """创建饼图（展示热门号码占比）"""
-        # 清除旧图表
-        for widget in parent_frame.winfo_children():
-            widget.destroy()
-
-        # 创建图形
-        self.figure, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
-        self.figure.tight_layout(pad=3.0)
-
-        # 红球Top5饼图
-        top_reds = sorted(
-            red_freq.items(),
-            key=lambda x: x[1],
-            reverse=True)[
-            :5]
-        if top_reds:
-            labels = [f"{num:02d}" for num, _ in top_reds]
-            sizes = [count for _, count in top_reds]
-            colors = ['#FF6B6B', '#FF8E8E', '#FFB3B3', '#FFD6D6', '#FFF0F0']
-            ax1.pie(
-                sizes,
-                labels=labels,
-                colors=colors,
-                autopct='%1.1f%%',
-                startangle=90)
-            ax1.set_title(
-                '红球TOP5占比',
-                fontproperties="Microsoft YaHei",
-                fontsize=12)
-
-        # 蓝球Top5饼图
-        top_blues = sorted(
-            blue_freq.items(),
-            key=lambda x: x[1],
-            reverse=True)[
-            :5]
-        if top_blues:
-            labels = [f"{num:02d}" for num, _ in top_blues]
-            sizes = [count for _, count in top_blues]
-            colors = ['#4D96FF', '#6DABE8', '#8DC0E8', '#ADCCE8', '#CDE0F8']
-            ax2.pie(
-                sizes,
-                labels=labels,
-                colors=colors,
-                autopct='%1.1f%%',
-                startangle=90)
-            ax2.set_title(
-                '蓝球TOP5占比',
-                fontproperties="Microsoft YaHei",
-                fontsize=12)
-
-        # 嵌入到Tkinter
-        self.canvas = FigureCanvasTkAgg(self.figure, master=parent_frame)
-        self.canvas.draw()
-        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-
-    def clear(self):
-        """清除图表"""
-        if self.canvas:
-            self.canvas.get_tk_widget().destroy()
-        if self.figure:
-            plt.close(self.figure)
 
 
 def main():
