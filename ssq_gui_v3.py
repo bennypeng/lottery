@@ -1,17 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-双色球推荐工具 - 图形界面版 v2.3.0
+双色球推荐工具 - 图形界面版 v1.0.0
 Python 3.12 兼容 | 支持Windows打包
-
-新增功能：
-1. 开奖倒计时（状态信息上方）
-2. 显示距离下一次开奖的剩余时间
-3. 自动每秒更新
-
-优化：
-1. 删除历史数据统计区域
-2. 将生成推荐按钮移到推荐区域
-3. 界面更简洁
 """
 
 import os
@@ -41,10 +31,10 @@ class AppConfig:
     RED_BALL_RANGE = (1, 33)
     BLUE_BALL_RANGE = (1, 16)
     TIMEOUT = 30
-    VERSION = "2.3.0"
+    VERSION = "1.0.0"
 
     # UI配置
-    WINDOW_SIZE = "850x600"
+    WINDOW_SIZE = "850x400"
     FONT_FAMILY = "Microsoft YaHei"
     FONT_FAMILY_MONO = "Consolas"
 
@@ -494,7 +484,7 @@ class SSQGUI:
         return now + timedelta(days=1)
 
     def setup_ui(self):
-        """构建UI布局"""
+        """构建UI布局 - 修复开奖结果框高度跳动问题"""
         # 主容器
         main_container = ttk.Frame(self.root)
         main_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -508,11 +498,11 @@ class SSQGUI:
         right_panel.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
 
         # 配置权重
-        main_container.columnconfigure(0, weight=1)
-        main_container.columnconfigure(1, weight=2)
+        main_container.columnconfigure(0, weight=2)
+        main_container.columnconfigure(1, weight=1)
 
         # ========== 左侧面板 ==========
-        # 新增：开奖倒计时（在状态信息上方）
+        # 开奖倒计时（在状态信息上方）
         countdown_frame = ttk.LabelFrame(left_panel, text="开奖倒计时", padding="5")
         countdown_frame.pack(fill=tk.X, pady=5)
 
@@ -544,7 +534,7 @@ class SSQGUI:
                 2,
                 0))
 
-        # 最新一期
+        # 最新一期 - 关键修改：固定高度容器 + 占位符
         latest_frame = ttk.LabelFrame(left_panel, text="最新一期开奖结果", padding="5")
         latest_frame.pack(fill=tk.X, pady=5)
 
@@ -558,10 +548,22 @@ class SSQGUI:
         self.latest_result_text.insert(tk.END, "请先获取数据...")
         self.latest_result_text.config(state=tk.DISABLED)
 
-        ball_container = ttk.Frame(latest_frame)
+        # 固定高度的彩球容器（防止布局跳动）
+        ball_container = ttk.Frame(latest_frame, height=35)  # 固定35像素高度
         ball_container.pack(fill=tk.X, pady=3, anchor=tk.W)
+
         self.ball_frame = ttk.Frame(ball_container)
-        self.ball_frame.pack(anchor=tk.W)
+        self.ball_frame.pack(anchor=tk.W, fill=tk.X)
+
+        # 添加透明占位符保持最小高度
+        self.placeholder_ball = ttk.Label(
+            self.ball_frame,
+            text="○",  # 空心圆作为占位符
+            font=(AppConfig.FONT_FAMILY, 10),
+            foreground="#E0E0E0",  # 浅灰色，几乎看不见
+            padding=(8, 4)
+        )
+        self.placeholder_ball.pack(side=tk.LEFT, padx=2)
 
         # 操作按钮
         button_frame = ttk.Frame(left_panel)
@@ -575,10 +577,18 @@ class SSQGUI:
             left_panel, mode='indeterminate', length=200)
         self.progress.pack(fill=tk.X, pady=5)
 
-        self.btn_fetch = ttk.Button(btn_container, text="🔄获取数据", command=self.start_fetch_data, width=12)
+        self.btn_fetch = ttk.Button(
+            btn_container,
+            text="🔄获取数据",
+            command=self.start_fetch_data,
+            width=12)
         self.btn_fetch.pack(side=tk.LEFT, padx=2, pady=2)
 
-        self.btn_clear = ttk.Button(btn_container, text="🗑清除缓存", command=self.clear_cache, width=12)
+        self.btn_clear = ttk.Button(
+            btn_container,
+            text="🗑清除缓存",
+            command=self.clear_cache,
+            width=12)
         self.btn_clear.pack(side=tk.LEFT, padx=2, pady=2)
 
         # ========== 右侧面板（推荐区域）==========
@@ -638,7 +648,7 @@ class SSQGUI:
         # 推荐结果展示
         self.result_text = scrolledtext.ScrolledText(
             recommend_frame, height=10, font=(
-                AppConfig.FONT_FAMILY_MONO, 12), wrap=tk.WORD)
+                AppConfig.FONT_FAMILY_MONO, 10), wrap=tk.WORD)
         self.result_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         self.result_text.insert(tk.END, "点击【生成推荐】获取号码...")
         self.result_text.config(state=tk.DISABLED)
